@@ -1,1 +1,6 @@
-*.py[cdo]
+*.pyc
+MANIFEST
+build/
+fourget.egg-info/
+*.swp
+*.egg

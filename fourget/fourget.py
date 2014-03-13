@@ -32,7 +32,7 @@ class Thread(Resource):
                 yield image
         else:
             self._images = []
-            images = [Image.image_from_post_json(post, self.board) for post in self.json["posts"] if post["tim"]]
+            images = [Image.image_from_post_json(post, self.board) for post in self.json["posts"] if ("tim" in post and "ext" in post)]
             for image in images:
                 self._images.append(image)
                 yield image

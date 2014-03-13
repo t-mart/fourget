@@ -5,7 +5,6 @@ import fourget
 
 from setuptools import setup
 
-
 setup(
     name = 'fourget',
     version = fourget.__version__,
@@ -21,5 +20,4 @@ setup(
     },
     packages = [ 'fourget', ],
     install_requires = ['requests>=2.2.1', 'clint>=0.3.4'],
-    )
-
+)
