@@ -4,3 +4,5 @@ __author__ = 'Tim Martin'
 
 class Bad4ChanURLError(ValueError):
     pass
+
+from .fourget import Thread, Image
