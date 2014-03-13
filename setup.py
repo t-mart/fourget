@@ -1,13 +1,11 @@
 import sys
 import os
 
-import fourget
-
 from setuptools import setup
 
 setup(
     name = 'fourget',
-    version = fourget.__version__,
+    version = '0.0.1',
     author = 'Tim Martin',
     author_email = 'tim@timmart.in',
     description = ('download 4chan images'),
