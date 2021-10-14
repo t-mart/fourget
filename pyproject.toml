@@ -1,0 +1,30 @@
+[tool.poetry]
+name = "fourget"
+version = "0.1.0"
+description = ""
+authors = ["Tim Martin <tim@timmart.in>"]
+
+[tool.poetry.dependencies]
+python = "^3.10"
+httpx = "1.0.0b0"
+typer = "^0.4.0"
+attrs = "^21.2.0"
+aiofiles = "^0.7.0"
+tqdm = "^4.62.3"
+arrow = "^1.2.0"
+yarl = "^1.7.0"
+
+[tool.poetry.dev-dependencies]
+black = "^21.9b0"
+mypy = "^0.910"
+pytest = "^6.2.5"
+isort = "^5.9.3"
+flake8 = "^4.0.1"
+
+[build-system]
+requires = ["poetry-core>=1.0.0"]
+build-backend = "poetry.core.masonry.api"
+
+
+[tool.poetry.scripts]
+fourget = "fourget.__main__:app"
