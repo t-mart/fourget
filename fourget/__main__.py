@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import asyncio
 import hashlib
-import string
 import sys
 from base64 import b64decode
 from pathlib import Path
@@ -19,9 +18,9 @@ from yarl import URL
 
 from fourget import log
 
-ALLOWED_FILE_NAME_CHARS = set(
-    string.ascii_letters + string.digits + " !#$%&'()+,-.;=@[]^_`{}~"
-)
+# Set of characters blocked in filenames by nix/windows/osx.
+# Source: https://stackoverflow.com/a/31976060/235992
+BLOCKED_FILE_NAME_CHARS = {chr(i) for i in range(32)} | set(R'<>:"/\|?*')
 
 
 @attr.s(frozen=True, auto_attribs=True, kw_only=True, order=False)
@@ -189,7 +188,7 @@ async def download_file(
 
 def file_name_santize(name: str) -> str:
     """Return a file name that should be suitable as a file name on most OSes."""
-    return "".join(c for c in name if c in ALLOWED_FILE_NAME_CHARS)
+    return "".join(c for c in name if c not in BLOCKED_FILE_NAME_CHARS)
 
 
 async def consumer(
@@ -225,7 +224,6 @@ async def consumer(
                 new_download_event.set()
 
             queue.task_done()
-            pbar.set_postfix_str(f"file={output_path.name[:10]: <10}", refresh=False)
 
 
 async def producer(
