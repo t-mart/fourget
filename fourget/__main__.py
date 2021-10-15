@@ -18,10 +18,6 @@ from yarl import URL
 
 from fourget import log
 
-# Set of characters blocked in filenames by nix/windows/osx.
-# Source: https://stackoverflow.com/a/31976060/235992
-BLOCKED_FILE_NAME_CHARS = {chr(i) for i in range(32)} | set(R'<>:"/\|?*')
-
 
 @attr.s(frozen=True, auto_attribs=True, kw_only=True, order=False)
 class Post:
@@ -184,6 +180,11 @@ async def download_file(
             async for chunk in response.aiter_bytes(max_chunk_size):
                 await f.write(chunk)
                 yield len(chunk)
+
+
+# Set of characters blocked in filenames by nix/windows/osx.
+# Source: https://stackoverflow.com/a/31976060/235992
+BLOCKED_FILE_NAME_CHARS = {chr(i) for i in range(32)} | set(R'<>:"/\|?*')
 
 
 def file_name_santize(name: str) -> str:
