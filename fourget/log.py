@@ -1,6 +1,5 @@
-"""
-Logging setup
-"""
+"""Logging setup."""
+
 import sys
 
 import arrow
@@ -20,16 +19,20 @@ def _log(*, label: str, msg: str) -> None:
 
 
 def debug(msg: str) -> None:
+    """Write a log message at DEBUG level."""
     _log(label=DEBUG_LABEL, msg=msg)
 
 
 def info(msg: str) -> None:
+    """Write a log message at INFO level."""
     _log(label=INFO_LABEL, msg=msg)
 
 
 def warn(msg: str) -> None:
+    """Write a log message at WARN level."""
     _log(label=WARN_LABEL, msg=msg)
 
 
 def error(msg: str) -> None:
+    """Write a log message at ERROR level."""
     _log(label=ERROR_LABEL, msg=msg)

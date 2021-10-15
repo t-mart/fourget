@@ -191,7 +191,7 @@ def file_name_santize(name: str) -> str:
     return "".join(c for c in name if c not in BLOCKED_FILE_NAME_CHARS)
 
 
-async def consumer(
+async def file_downloader(
     queue: asyncio.Queue[DownloadItem],
     pbar: tqdm,
     new_download_event: asyncio.Event,
@@ -226,7 +226,7 @@ async def consumer(
             queue.task_done()
 
 
-async def producer(
+async def thread_reader(
     site_url: ThreadURL,
     root_output_dir: Path,
     queue: asyncio.Queue[DownloadItem],
@@ -288,7 +288,7 @@ async def start_queue(
 
     for _ in range(consumer_count):
         consumer_task = asyncio.create_task(
-            consumer(
+            file_downloader(
                 queue=queue,
                 pbar=pbar,
                 new_download_event=new_download_event,
@@ -297,7 +297,7 @@ async def start_queue(
         all_tasks.add(consumer_task)
 
     producer_task = asyncio.create_task(
-        producer(
+        thread_reader(
             site_url=site_url, root_output_dir=root_output_dir, queue=queue, pbar=pbar
         ),
     )
@@ -346,8 +346,9 @@ def main(
     requestor_count: int = typer.Option(
         default=3,
         help=(
-            "Number of concurrent requestors to run asynchronously. Setting too low "
-            "will reduce performance, while too high will cause requestor starvation."
+            "Number of concurrent downloader tasks to run asynchronously. Setting too "
+            "low will reduce performance, while too high will cause requestor "
+            "starvation."
         ),
     ),
     asyncio_debug: bool = typer.Option(

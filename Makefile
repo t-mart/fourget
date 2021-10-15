@@ -1,7 +1,7 @@
 src-dirs = fourget
 
 .PHONY: all
-all: black flake8 isort mypy
+all: pydocstyle isort black flake8 mypy
 
 .PHONY: mypy
 mypy:
