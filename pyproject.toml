@@ -3,6 +3,10 @@ name = "fourget"
 version = "0.1.0"
 description = "Download/scrape media files from 4chan threads"
 authors = ["Tim Martin <tim@timmart.in>"]
+homepage = "https://github.com/t-mart/fourget"
+repository = "https://github.com/t-mart/fourget"
+license = "MIT"
+readme = "README.md"
 
 [tool.poetry.dependencies]
 python = "^3.10"
