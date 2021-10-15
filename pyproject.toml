@@ -1,7 +1,7 @@
 [tool.poetry]
 name = "fourget"
 version = "0.1.0"
-description = ""
+description = "Download/scrape media files from 4chan threads"
 authors = ["Tim Martin <tim@timmart.in>"]
 
 [tool.poetry.dependencies]
