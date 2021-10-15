@@ -358,7 +358,7 @@ def main(
         debug=asyncio_debug,
     )
 
-    sys.exit(bool(new_download))
+    sys.exit(0 if new_download else 1)
 
 
 if __name__ == "__main__":
