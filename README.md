@@ -33,8 +33,10 @@ $ pip install fourget
 
    ```shell
    # for example, if new version is 1.2.3
+   $ git add pyproject.toml
    $ git commit -m "Bump version to 1.2.3"
    $ git tag -a "1.2.3" -m "1.2.3"
+   $ git push
    ```
 
 3. Run `poetry publish --build`. (Will need to have configured PYPI token)
