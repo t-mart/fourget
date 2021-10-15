@@ -18,3 +18,7 @@ flake8:
 .PHONY: black
 black:
 	black $(src-dirs)
+
+.PHONY: pydocstyle
+pydocstyle:
+	pydocstyle $(src-dirs)

@@ -1,3 +1,5 @@
+"""fourget - Download/scrape media files from 4chan threads."""
+
 from __future__ import annotations
 
 import asyncio
@@ -24,6 +26,12 @@ ALLOWED_FILE_NAME_CHARS = set(
 
 @attr.s(frozen=True, auto_attribs=True, kw_only=True, order=False)
 class Post:
+    """
+    Data class representing 4chan posts.
+
+    Note the optional attributes.
+    """
+
     board: str
     post_id: int
     subject_text: Optional[str]
@@ -32,6 +40,8 @@ class Post:
 
     @attr.s(frozen=True, auto_attribs=True, kw_only=True, order=False)
     class File:
+        """Data class representing attachments to 4chan posts."""
+
         timestamp: int
         extension: str
         size: int
@@ -41,14 +51,17 @@ class Post:
 
         @property
         def name(self) -> str:
+            """Concatenation of timestamp and extension."""
             return f"{self.timestamp}{self.extension}"
 
         @property
         def url(self) -> str:
+            """Location of the media file on 4chan's servers."""
             return f"https://i.4cdn.org/{self.board}/{self.name}"
 
     @classmethod
     def from_json(cls, board: str, json_resp: dict[str, Any]) -> Post:
+        """Create a new post from a 4chan JSON post object."""
         post_id = json_resp["no"]
 
         subject_text = None
@@ -108,8 +121,7 @@ class Post:
     @property
     def description(self) -> Optional[str]:
         """
-        This method attempts to give some textual description of the thread, but note
-        that it not be possible.
+        Try to generate some textual description of the thread.
 
         First, if there is a post subject, use the first 80 characters of it. If not and
         if there is a comment, use the first 80 characters of the comment. Otherwise,
@@ -128,28 +140,35 @@ class Post:
 
 @attr.s(frozen=True, auto_attribs=True, kw_only=True, order=False)
 class DownloadItem:
+    """An enqueueable piece of work for the consumer tasks."""
+
     post_file: Post.File
     output_dir: Path
 
 
 @attr.s(frozen=True, auto_attribs=True, kw_only=True, order=False)
-class SiteURL:
+class ThreadURL:
+    """Data class for thread URLs."""
+
     board: str
     thread_id: int
 
     @classmethod
-    def from_url(cls, url: str) -> SiteURL:
+    def from_url(cls, url: str) -> ThreadURL:
+        """Create a new ThreadURL from a desktop URL."""
         parsed = URL(url)
         path = Path(parsed.path)
         _, board, _, thread_id = path.parts
-        return SiteURL(board=board, thread_id=int(thread_id))
+        return ThreadURL(board=board, thread_id=int(thread_id))
 
     @property
     def api_endpoint_url(self) -> str:
+        """Get the API endpoint URL."""
         return f"https://a.4cdn.org/{self.board}/thread/{self.thread_id}.json"
 
 
 async def md5_path(path: Path, max_chunk_size: int = 2 ** 20) -> bytes:
+    """Return the md5 hash of a file from its path."""
     async with aiofiles.open(path, "rb") as f:
         md5_hash = hashlib.md5()
         while data := await f.read(max_chunk_size):
@@ -160,10 +179,7 @@ async def md5_path(path: Path, max_chunk_size: int = 2 ** 20) -> bytes:
 async def download_file(
     client: httpx.AsyncClient, url: str, path: Path, max_chunk_size: int = 2 ** 20
 ) -> AsyncIterator[int]:
-    """
-    Download url to path with client, yielding the length of the chunks downloaded as
-    we go.
-    """
+    """Download url to path with client, yielding chunk lengths as we go."""
     async with client.stream("GET", url) as response:
         async with aiofiles.open(path, "wb") as f:
             async for chunk in response.aiter_bytes(max_chunk_size):
@@ -172,6 +188,7 @@ async def download_file(
 
 
 def file_name_santize(name: str) -> str:
+    """Return a file name that should be suitable as a file name on most OSes."""
     return "".join(c for c in name if c in ALLOWED_FILE_NAME_CHARS)
 
 
@@ -180,9 +197,7 @@ async def consumer(
     pbar: tqdm,
     new_download_event: asyncio.Event,
 ) -> None:
-    """
-    TODO
-    """
+    """Remove DownloadItems from the queue and download them, if needed."""
     log.debug("Starting file download worker...")
 
     async with httpx.AsyncClient() as client:
@@ -214,14 +229,12 @@ async def consumer(
 
 
 async def producer(
-    site_url: SiteURL,
+    site_url: ThreadURL,
     root_output_dir: Path,
     queue: asyncio.Queue[DownloadItem],
     pbar: tqdm,
 ) -> None:
-    """
-    TODO
-    """
+    """HTTP get a 4chan thread and create DownloadItem objects for each post."""
     log.debug("Starting thread reader worker...")
     async with httpx.AsyncClient() as client:
         response = await client.get(site_url.api_endpoint_url)
@@ -260,15 +273,13 @@ async def producer(
     await queue.join()
 
 
-async def process_all(
-    site_url: SiteURL,
+async def start_queue(
+    site_url: ThreadURL,
     root_output_dir: Path,
     queue_maxsize: int,
     consumer_count: int,
 ) -> bool:
-    """
-    TODO
-    """
+    """Create a DownloadItem queue and start producers and consumers for it."""
     log.info(f"Downloading files from {site_url.api_endpoint_url}")
 
     queue: asyncio.Queue[DownloadItem] = asyncio.Queue(maxsize=queue_maxsize)
@@ -323,7 +334,8 @@ def main(
         default=Path("."),
         help=(
             "Directory in which to store downloaded media files. Will be placed in "
-            'heirarchy of "<output_dir>/4chan/<board>/<post_id>"'
+            'heirarchy of "<output_dir>/4chan - <board> - <post_id> - '
+            '<post_description>"'
         ),
     ),
     queue_maxsize: int = typer.Option(
@@ -346,11 +358,15 @@ def main(
     ),
 ) -> int:
     """
-    TODO
+    Download media files from a 4chan thread located at URL.
+
+    URL should be in the form "https://boards.4channel.org/<board>/thread/<post_id>",
+    such as "https://boards.4channel.org/g/thread/76759434". The "4chan.org" domain may
+    also be used.
     """
     new_download = asyncio.run(
-        process_all(
-            site_url=SiteURL.from_url(url),
+        start_queue(
+            site_url=ThreadURL.from_url(url),
             root_output_dir=output_dir,
             queue_maxsize=queue_maxsize,
             consumer_count=requestor_count,
