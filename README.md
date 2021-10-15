@@ -33,9 +33,10 @@ $ pip install fourget
 
    ```shell
    # for example, if new version is 1.2.3
+   $ NEW_FOURGET_VERSION=1.2.3
    $ git add pyproject.toml
-   $ git commit -m "Bump version to 1.2.3"
-   $ git tag -a "1.2.3" -m "1.2.3"
+   $ git commit -m "Bump version to $NEW_FOURGET_VERSION"
+   $ git tag -a "$NEW_FOURGET_VERSION" -m "$NEW_FOURGET_VERSION"
    $ git push
    ```
 
