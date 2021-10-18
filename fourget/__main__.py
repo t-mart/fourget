@@ -6,6 +6,7 @@ import asyncio
 import hashlib
 import sys
 from base64 import b64decode
+from contextvars import ContextVar
 from pathlib import Path
 from typing import Any, AsyncIterator, Optional
 
@@ -17,6 +18,18 @@ from tqdm import tqdm
 from yarl import URL
 
 from fourget import log
+from fourget.queue import Item, Queue, StopReason
+
+client_var: ContextVar[httpx.AsyncClient] = ContextVar("client")
+pbar_var: ContextVar[tqdm] = ContextVar("pbar")
+result_var: ContextVar[Results] = ContextVar("results")
+
+
+@attr.s(auto_attribs=True, kw_only=True, order=False)
+class Results:
+    """Summary of processing."""
+
+    performed_new_download: bool = attr.ib(default=False)
 
 
 @attr.s(frozen=True, auto_attribs=True, kw_only=True, order=False)
@@ -134,14 +147,6 @@ class Post:
 
 
 @attr.s(frozen=True, auto_attribs=True, kw_only=True, order=False)
-class DownloadItem:
-    """An enqueueable piece of work for the consumer tasks."""
-
-    post_file: Post.File
-    output_dir: Path
-
-
-@attr.s(frozen=True, auto_attribs=True, kw_only=True, order=False)
 class ThreadURL:
     """Data class for thread URLs."""
 
@@ -192,135 +197,124 @@ def file_name_santize(name: str) -> str:
     return "".join(c for c in name if c not in BLOCKED_FILE_NAME_CHARS)
 
 
-async def file_downloader(
-    queue: asyncio.Queue[DownloadItem],
-    pbar: tqdm,
-    new_download_event: asyncio.Event,
-) -> None:
-    """Remove DownloadItems from the queue and download them, if needed."""
-    log.debug("Starting file download worker...")
+@attr.s(frozen=True, auto_attribs=True, kw_only=True, order=False)
+class MediaDownloadItem(Item):
+    """Item that downloads media files."""
 
-    async with httpx.AsyncClient() as client:
+    post_file: Post.File
+    output_dir: Path
 
-        while True:
-            download_item = await queue.get()
+    async def process(self, queue: Queue) -> Optional[StopReason]:
+        """Download media files to local disk from URLs."""
+        pbar = pbar_var.get()
 
-            post_file = download_item.post_file
+        local_file_name = file_name_santize(
+            f"{self.post_file.timestamp} - {self.post_file.poster_stem}"
+            f"{self.post_file.extension}"
+        )
 
-            local_file_name = file_name_santize(
-                f"{post_file.timestamp} - {post_file.poster_stem}{post_file.extension}"
+        output_path = self.output_dir / local_file_name
+
+        if output_path.exists() and await md5_path(output_path) == self.post_file.md5:
+            log.info(f"Not downloading {self.post_file.url} because it already exists")
+            pbar.update(self.post_file.size)
+        else:
+            client = client_var.get()
+            async for chunk_size in download_file(
+                client=client, url=self.post_file.url, path=output_path
+            ):
+                pbar.update(chunk_size)
+            log.info(f"{self.post_file.url} -> {output_path}")
+            result_var.get().performed_new_download = True
+
+        return None
+
+
+@attr.s(frozen=True, auto_attribs=True, kw_only=True, order=False)
+class ThreadReadItem(Item):
+    """Item that reads the thread."""
+
+    thread_url: ThreadURL
+    root_output_dir: Path
+
+    async def process(self, queue: Queue) -> Optional[StopReason]:
+        """Read the thread json and enqueue media downloads for posts with files."""
+        client = client_var.get()
+        response = await client.get(self.thread_url.api_endpoint_url)
+        pbar = pbar_var.get()
+
+        json_body = response.json()
+        posts = [
+            Post.from_json(board=self.thread_url.board, json_resp=post)
+            for post in json_body["posts"]
+        ]
+
+        total_file_size = sum(post.file.size for post in posts if post.file)
+        pbar.total = total_file_size
+
+        orig_post = posts[0]
+        assert orig_post
+
+        if orig_post.description is None:
+            trailer = ""
+        else:
+            trailer = f" - {orig_post.description}"
+
+        output_dir_name = file_name_santize(
+            f"4chan - {self.thread_url.board} - {orig_post.post_id}{trailer}"
+        )
+
+        output_dir = self.root_output_dir / output_dir_name
+
+        if not output_dir.exists():
+            output_dir.mkdir(parents=True)
+            log.debug(f"Created output directory {output_dir}")
+
+        for post in posts:
+            if post.file is None:
+                continue
+            await queue.put(
+                MediaDownloadItem(post_file=post.file, output_dir=output_dir)
             )
 
-            output_path = download_item.output_dir / local_file_name
-
-            if output_path.exists() and await md5_path(output_path) == post_file.md5:
-                log.info(f"Not downloading {post_file.url} because it already exists")
-                pbar.update(post_file.size)
-            else:
-                async for chunk_size in download_file(
-                    client=client, url=post_file.url, path=output_path
-                ):
-                    pbar.update(chunk_size)
-                log.info(f"{post_file.url} -> {output_path}")
-                new_download_event.set()
-
-            queue.task_done()
-
-
-async def thread_reader(
-    site_url: ThreadURL,
-    root_output_dir: Path,
-    queue: asyncio.Queue[DownloadItem],
-    pbar: tqdm,
-) -> None:
-    """HTTP get a 4chan thread and create DownloadItem objects for each post."""
-    log.debug("Starting thread reader worker...")
-    async with httpx.AsyncClient() as client:
-        response = await client.get(site_url.api_endpoint_url)
-    json_body = response.json()
-    posts = [
-        Post.from_json(board=site_url.board, json_resp=post)
-        for post in json_body["posts"]
-    ]
-
-    total_file_size = sum(post.file.size for post in posts if post.file)
-    pbar.total = total_file_size
-
-    op = posts[0]
-    assert op
-
-    if op.description is None:
-        trailer = ""
-    else:
-        trailer = f" - {op.description}"
-
-    output_dir_name = file_name_santize(
-        f"4chan - {site_url.board} - {op.post_id}{trailer}"
-    )
-
-    output_dir = root_output_dir / output_dir_name
-
-    if not output_dir.exists():
-        output_dir.mkdir(parents=True)
-        log.debug(f"Created output directory {output_dir}")
-
-    for post in posts:
-        if post.file is None:
-            continue
-        await queue.put(DownloadItem(post_file=post.file, output_dir=output_dir))
-
-    await queue.join()
+        return None
 
 
 async def start_queue(
-    site_url: ThreadURL,
+    thread_url: ThreadURL,
     root_output_dir: Path,
     queue_maxsize: int,
-    consumer_count: int,
+    worker_count: int,
 ) -> bool:
     """Create a DownloadItem queue and start producers and consumers for it."""
-    log.info(f"Downloading files from {site_url.api_endpoint_url}")
+    log.info(f"Downloading files from {thread_url.api_endpoint_url}")
 
-    queue: asyncio.Queue[DownloadItem] = asyncio.Queue(maxsize=queue_maxsize)
     pbar = tqdm(unit="B", unit_scale=True, unit_divisor=1024, leave=False)
-    new_download_event = asyncio.Event()
+    pbar_var.set(pbar)
 
-    all_tasks = set()
-
-    for _ in range(consumer_count):
-        consumer_task = asyncio.create_task(
-            file_downloader(
-                queue=queue,
-                pbar=pbar,
-                new_download_event=new_download_event,
-            ),
-        )
-        all_tasks.add(consumer_task)
-
-    producer_task = asyncio.create_task(
-        thread_reader(
-            site_url=site_url, root_output_dir=root_output_dir, queue=queue, pbar=pbar
-        ),
+    queue: Queue = Queue.create(
+        queue_maxsize=queue_maxsize,
+        stop_reason_callback=lambda sr: log.info(str(sr)),
     )
-    all_tasks.add(producer_task)
+    results = Results()
+    result_var.set(results)
 
-    done, pending = await asyncio.wait(all_tasks, return_when="FIRST_COMPLETED")
+    async with httpx.AsyncClient() as client:
+        client_var.set(client)
 
-    # we want exceptions to be raised if they've occured in a task. calling
-    # Task.result() will do that (or just return the value of the coro if none was
-    # raised).
-    for task in done:
-        task.result()
+        await queue.complete(
+            initial_items=[
+                ThreadReadItem(
+                    thread_url=thread_url,
+                    root_output_dir=root_output_dir,
+                ),
+            ],
+            worker_count=worker_count,
+        )
 
     pbar.close()
 
-    for task in pending:
-        if not task.done():
-            task.cancel()
-
-    await asyncio.gather(*pending, return_exceptions=True)
-
-    return new_download_event.is_set()
+    return results.performed_new_download
 
 
 app = typer.Typer()
@@ -344,10 +338,10 @@ def main(
             "reduce performance, while too high might fill up all your RAM."
         ),
     ),
-    requestor_count: int = typer.Option(
+    worker_count: int = typer.Option(
         default=3,
         help=(
-            "Number of concurrent downloader tasks to run asynchronously. Setting too "
+            "Number of concurrent worker tasks to run asynchronously. Setting too "
             "low will reduce performance, while too high will cause requestor "
             "starvation."
         ),
@@ -366,10 +360,10 @@ def main(
     """
     new_download = asyncio.run(
         start_queue(
-            site_url=ThreadURL.from_url(url),
+            thread_url=ThreadURL.from_url(url),
             root_output_dir=output_dir,
             queue_maxsize=queue_maxsize,
-            consumer_count=requestor_count,
+            worker_count=worker_count,
         ),
         debug=asyncio_debug,
     )
