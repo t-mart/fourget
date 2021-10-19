@@ -35,4 +35,4 @@ $ pip install fourget
    $ git push
    ```
 
-2. Run `poetry publish --build`. (Will need to have configured PYPI token)
+  The GitHub Actions CI workflow will take care of the rest.
