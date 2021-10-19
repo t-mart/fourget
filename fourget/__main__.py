@@ -5,7 +5,6 @@ from __future__ import annotations
 import asyncio
 import hashlib
 import json
-import sys
 from base64 import b64decode
 from collections.abc import AsyncIterator, Callable, Coroutine
 from contextvars import ContextVar
@@ -19,6 +18,7 @@ import typer
 from tqdm import tqdm
 from yarl import URL
 
+from fourget import __version__
 from fourget import log
 from fourget.queue import Item, Queue
 
@@ -342,6 +342,12 @@ async def start_queue(
 app = typer.Typer()
 
 
+def version_callback(value: bool):
+    if value:
+        typer.echo(f"fourget v{__version__}")
+        raise typer.Exit()
+
+
 @app.command()
 def main(
     url: str,
@@ -372,6 +378,9 @@ def main(
         default=False,
         help="Turn on asyncio debugging.",
     ),
+    version: Optional[bool] = typer.Option(
+        None, "--version", callback=version_callback, is_eager=True
+    ),
 ) -> int:
     """
     Download media files from a 4chan thread located at URL.
@@ -390,7 +399,7 @@ def main(
         debug=asyncio_debug,
     )
 
-    sys.exit(0 if new_download else 1)
+    raise typer.Exit(0 if new_download else 1)
 
 
 if __name__ == "__main__":
