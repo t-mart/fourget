@@ -1,0 +1,185 @@
+name: CI
+
+on:
+  push:
+    branches:
+      - "master"
+    tags:
+      - "[0-9]+.[0-9]+.[0-9]+"
+  pull_request:
+    branches:
+      - "master"
+  workflow_dispatch:
+
+jobs:
+  check:
+    name: Check
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v2
+      - name: Setup Python 3.10
+        uses: actions/setup-python@v2
+        with:
+          python-version: 3.10
+      - name: Get pip cache dir
+        id: pip-cache
+        run: |
+          echo "::set-output name=dir::$(pip cache dir)"
+        shell: bash
+      - name: Cache PyPI
+        uses: actions/cache@v2
+        with:
+          key: dep-cache-pip-ubuntu-${{ hashFiles('ci/poetry-requirements.txt') }}
+          path: ${{ steps.pip-cache.outputs.dir }}
+      - name: Get Poetry
+        run: |
+          pip install -r ci/poetry-requirements.txt
+      - name: Get poetry cache dir
+        id: poetry-cache
+        run: |
+          echo "::set-output name=dir::$(poetry config cache-dir)"
+      - name: Cache Poetry
+        uses: actions/cache@v2
+        with:
+          key: dep-cache-poetry-ubuntu-${{ hashFiles('poetry.lock') }}
+          path: ${{ steps.poetry-cache.outputs.dir }}
+      - name: Install dependencies
+        run: |
+          poetry install
+
+      - name: Check docstrings
+        run: |
+          poetry run pydocstyle fourget tests
+      - name: Check imports
+        run: |
+          poetry run isort --check fourget tests
+      - name: Check style
+        run: |
+          poetry run black --check fourget tests
+      - name: Analyze with flake8
+        run: |
+          poetry run flake8 fourget tests
+      - name: Analyze with pylint
+        run: |
+          poetry run pylint fourget tests
+      - name: Run mypy
+        run: |
+          poetry run mypy fourget tests
+
+  test:
+    name: Test
+    needs: check
+    strategy:
+      matrix:
+        pyver: [3.10]
+        os: [ubuntu, macos, windows]
+      fail-fast: true
+    runs-on: ${{ matrix.os }}-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v2
+      - name: Setup Python ${{ matrix.pyver }}
+        uses: actions/setup-python@v2
+        with:
+          python-version: ${{ matrix.pyver }}
+      - name: Get pip cache dir
+        id: pip-cache
+        run: |
+          echo "::set-output name=dir::$(pip cache dir)"
+        shell: bash
+      - name: Cache PyPI
+        uses: actions/cache@v2
+        with:
+          key: dep-cache-pip-${{ matrix.os }}-${{ hashFiles('ci/poetry-requirements.txt') }}
+          path: ${{ steps.pip-cache.outputs.dir }}
+      - name: Get Poetry
+        run: |
+          pip install -r ci/poetry-requirements.txt
+      - name: Get poetry cache dir
+        id: poetry-cache
+        run: |
+          echo "::set-output name=dir::$(poetry config cache-dir)"
+      - name: Cache Poetry
+        uses: actions/cache@v2
+        with:
+          key: dep-cache-poetry-${{ matrix.os }}-${{ hashFiles('poetry.lock') }}
+          path: ${{ steps.poetry-cache.outputs.dir }}
+      - name: Install dependencies
+        run: |
+          poetry install
+      - name: Run unittests
+        run: |
+          poetry run pytest tests --cov=fourget --cov-report=xml
+      - name: Upload coverage
+        uses: codecov/codecov-action@v1
+        with:
+          file: ./coverage.xml
+          env_vars: OS,PYTHON_VERSION
+        env:
+          OS: ${{ runner.os }}
+          PYTHON_VERSION: ${{ matrix.pyver }}
+
+  publish:
+    name: Publish
+    runs-on: ubuntu-latest
+    needs: test
+    # Run only on pushing a tag
+    if: github.event_name == 'push' && contains(github.ref, 'refs/tags/')
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v2
+      - name: Setup Python 3.10
+        uses: actions/setup-python@v2
+        with:
+          python-version: 3.10
+      - name: Get pip cache dir
+        id: pip-cache
+        run: |
+          echo "::set-output name=dir::$(pip cache dir)"
+        shell: bash
+      - name: Cache PyPI
+        uses: actions/cache@v2
+        with:
+          key: dep-cache-pip-ubuntu-${{ hashFiles('ci/poetry-requirements.txt') }}
+          path: ${{ steps.pip-cache.outputs.dir }}
+      - name: Get Poetry
+        run: |
+          pip install -r ci/poetry-requirements.txt
+      - name: Get poetry cache dir
+        id: poetry-cache
+        run: |
+          echo "::set-output name=dir::$(poetry config cache-dir)"
+      - name: Cache Poetry
+        uses: actions/cache@v2
+        with:
+          key: dep-cache-poetry-ubuntu-${{ hashFiles('poetry.lock') }}
+          path: ${{ steps.poetry-cache.outputs.dir }}
+      - name: Install dependencies
+        run: |
+          poetry install
+      - name: Build
+        run: |
+          poetry build
+      - name: Deploy to PyPI
+        run: |
+          poetry config pypi-token.pypi ${{ secrets.PYPI_TOKEN }}
+          poetry publish
+      - name: Create GitHub release
+        id: create_release
+        uses: actions/create-release@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          tag_name: ${{ github.ref }}
+          release_name: Release ${{ github.ref }}
+          draft: false
+          prerelease: false
+      - name: Upload GitHub release assets
+        uses: svenstaro/upload-release-action@v2
+        with:
+          repo_token: ${{ secrets.GITHUB_TOKEN }}
+          file: dist/*
+          tag: ${{ github.ref }}
+          overwrite: true
+          file_glob: true

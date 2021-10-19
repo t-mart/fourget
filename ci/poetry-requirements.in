@@ -1,0 +1,4 @@
+# This file generates poetry-requirements.txt
+# That file is used to bootstrap the GitHub actions environment with a reproducible set of packages.
+
+poetry ~= 1.1.11

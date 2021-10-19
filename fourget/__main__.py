@@ -18,8 +18,7 @@ import typer
 from tqdm import tqdm
 from yarl import URL
 
-from fourget import __version__
-from fourget import log
+from fourget import __version__, log
 from fourget.queue import Item, Queue
 
 client_var: ContextVar[httpx.AsyncClient] = ContextVar("client")
@@ -342,7 +341,8 @@ async def start_queue(
 app = typer.Typer()
 
 
-def version_callback(value: bool):
+def version_callback(value: bool) -> None:
+    """Print the version and exit."""
     if value:
         typer.echo(f"fourget v{__version__}")
         raise typer.Exit()
@@ -378,8 +378,12 @@ def main(
         default=False,
         help="Turn on asyncio debugging.",
     ),
+    # pylint: disable-next=unused-argument
     version: Optional[bool] = typer.Option(
-        None, "--version", callback=version_callback, is_eager=True
+        None,
+        "--version",
+        callback=version_callback,
+        is_eager=True,
     ),
 ) -> int:
     """

@@ -4,3 +4,5 @@ __pycache__
 .vscode
 dist
 4chan*
+.coverage
+coverage.xml

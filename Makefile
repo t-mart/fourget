@@ -1,7 +1,7 @@
-src-dirs = fourget
+src-dirs = fourget tests
 
 .PHONY: all
-all: pydocstyle isort black flake8 pylint mypy
+all: pydocstyle isort black flake8 pylint mypy test
 
 .PHONY: mypy
 mypy:
@@ -26,3 +26,11 @@ black:
 .PHONY: pydocstyle
 pydocstyle:
 	pydocstyle $(src-dirs)
+
+.PHONY: test
+test:
+	pytest tests --cov=fourget --cov-report=xml
+
+.PHONY: pip-compile
+pip-compile:
+	pip-compile ci/poetry-requirements.in
