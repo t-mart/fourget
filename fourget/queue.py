@@ -1,40 +1,29 @@
 """Here's the docstring."""
-# notions
-# queue
-# item
-# worker_task
-# terminating vs non-terminating
 from __future__ import annotations
 
 import asyncio
 from abc import ABCMeta, abstractmethod
-from typing import Any, Callable, Iterable, Optional
+from collections.abc import Callable, Coroutine, Iterable
+from typing import Any, Optional
 
 import attr
-
-
-async def worker_task(queue: Queue) -> StopReason:
-    """Process items in queue until one of them requests termination."""
-    while True:
-        item = await queue.get()
-
-        stop_reason = await item.process(queue=queue)
-
-        queue.task_done()
-
-        if stop_reason is not None:
-            return stop_reason
 
 
 class Item(metaclass=ABCMeta):
     """Abstract class for enqueue-able item of work that's processed by worker tasks."""
 
     @abstractmethod
-    async def process(self, queue: Queue) -> Optional[StopReason]:
+    async def process(
+        self, enqueue: Callable[[Item], Coroutine[Any, Any, None]]
+    ) -> Optional[StopReason]:
         """
-        Do the "work" of the item.
+        Do the "work" of the item. To be overriden by subclasses.
 
-        Return True if the completion of this item should terminate the queue.
+        Return a StopReason object if the completion of this item should stop the
+        processing of the queue. Otherwise, return None.
+
+        In the method, call enqueue(item) if the processing of this item should enqueue
+        further items of work.
         """
         raise NotImplementedError("Can't process on abstract Item class.")
 
@@ -52,7 +41,7 @@ class StopReason:
 
 @attr.s(frozen=True, kw_only=True, auto_attribs=True, order=False)
 class Queue:
-    """An asyncio.Queue with some additional stuff."""
+    """An asynchronous queue that can process items until they have completed."""
 
     _queue: asyncio.Queue[Item]
     stop_reason_callback: Callable[[StopReason], None]
@@ -81,15 +70,10 @@ class Queue:
 
         tasks: set[asyncio.Task[Optional[StopReason]]] = set()
 
-        async def all_items_processed() -> StopReason:
-            await self._queue.join()
+        tasks.add(asyncio.create_task(self._all_items_processed(), name="queue-joiner"))
 
-            return StopReason(reason="All items processed")
-
-        tasks.add(asyncio.create_task(all_items_processed(), name="joiner"))
-
-        for _ in range(worker_count):
-            tasks.add(asyncio.create_task(worker_task(self)))
+        for i in range(worker_count):
+            tasks.add(asyncio.create_task(self._worker(), name=f"queue-worker-{i}"))
 
         done, pending = await asyncio.wait(tasks, return_when="FIRST_COMPLETED")
 
@@ -106,14 +90,28 @@ class Queue:
 
         await asyncio.gather(*pending, return_exceptions=True)
 
-    async def get(self) -> Item:
-        """Remove and return an item from the queue."""
-        return await self._queue.get()
+    async def _all_items_processed(self) -> StopReason:
+        await self._queue.join()
 
-    async def put(self, item: Item) -> None:
-        """Remove and return an item from the queue."""
+        return StopReason(reason="All items processed")
+
+    async def _worker(self) -> StopReason:
+        """Process items in queue until one of them requests termination."""
+        while True:
+            item = await self._queue.get()
+
+            stop_reason = await item.process(enqueue=self._put)
+
+            self._queue.task_done()
+
+            if stop_reason is not None:
+                return stop_reason
+
+    async def _put(self, item: Item) -> None:
+        """
+        Remove and return an item from the queue.
+
+        While most we don't expose much of the underlying queue's API, we do expose this
+        because Item.process methods may need to enqueue more work.
+        """
         return await self._queue.put(item=item)
-
-    def task_done(self) -> None:
-        """Indicate that a formerly enqueued task is complete."""
-        return self._queue.task_done()

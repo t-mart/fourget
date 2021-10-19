@@ -4,11 +4,13 @@ from __future__ import annotations
 
 import asyncio
 import hashlib
+import json
 import sys
 from base64 import b64decode
+from collections.abc import AsyncIterator, Callable, Coroutine
 from contextvars import ContextVar
 from pathlib import Path
-from typing import Any, AsyncIterator, Optional
+from typing import Any, Optional
 
 import aiofiles
 import attr
@@ -18,7 +20,7 @@ from tqdm import tqdm
 from yarl import URL
 
 from fourget import log
-from fourget.queue import Item, Queue, StopReason
+from fourget.queue import Item, Queue
 
 client_var: ContextVar[httpx.AsyncClient] = ContextVar("client")
 pbar_var: ContextVar[tqdm] = ContextVar("pbar")
@@ -202,9 +204,11 @@ class MediaDownloadItem(Item):
     """Item that downloads media files."""
 
     post_file: Post.File
-    output_dir: Path
+    thread_dir: Path
 
-    async def process(self, queue: Queue) -> Optional[StopReason]:
+    async def process(
+        self, enqueue: Callable[[Item], Coroutine[Any, Any, None]]
+    ) -> None:
         """Download media files to local disk from URLs."""
         pbar = pbar_var.get()
 
@@ -213,7 +217,7 @@ class MediaDownloadItem(Item):
             f"{self.post_file.extension}"
         )
 
-        output_path = self.output_dir / local_file_name
+        output_path = self.thread_dir / local_file_name
 
         if output_path.exists() and await md5_path(output_path) == self.post_file.md5:
             log.info(f"Not downloading {self.post_file.url} because it already exists")
@@ -227,8 +231,6 @@ class MediaDownloadItem(Item):
             log.info(f"{self.post_file.url} -> {output_path}")
             result_var.get().performed_new_download = True
 
-        return None
-
 
 @attr.s(frozen=True, auto_attribs=True, kw_only=True, order=False)
 class ThreadReadItem(Item):
@@ -237,13 +239,16 @@ class ThreadReadItem(Item):
     thread_url: ThreadURL
     root_output_dir: Path
 
-    async def process(self, queue: Queue) -> Optional[StopReason]:
+    async def process(
+        self, enqueue: Callable[[Item], Coroutine[Any, Any, None]]
+    ) -> None:
         """Read the thread json and enqueue media downloads for posts with files."""
         client = client_var.get()
         response = await client.get(self.thread_url.api_endpoint_url)
         pbar = pbar_var.get()
 
         json_body = response.json()
+
         posts = [
             Post.from_json(board=self.thread_url.board, json_resp=post)
             for post in json_body["posts"]
@@ -264,20 +269,37 @@ class ThreadReadItem(Item):
             f"4chan - {self.thread_url.board} - {orig_post.post_id}{trailer}"
         )
 
-        output_dir = self.root_output_dir / output_dir_name
+        thread_dir = self.root_output_dir / output_dir_name
 
-        if not output_dir.exists():
-            output_dir.mkdir(parents=True)
-            log.debug(f"Created output directory {output_dir}")
+        await enqueue(JSONSaveItem(thread_path=thread_dir, json_object=json_body))
+
+        if not thread_dir.exists():
+            thread_dir.mkdir(parents=True)
+            log.debug(f"Created thread directory {thread_dir}")
 
         for post in posts:
             if post.file is None:
                 continue
-            await queue.put(
-                MediaDownloadItem(post_file=post.file, output_dir=output_dir)
-            )
+            await enqueue(MediaDownloadItem(post_file=post.file, thread_dir=thread_dir))
 
-        return None
+
+@attr.s(frozen=True, auto_attribs=True, kw_only=True, order=False)
+class JSONSaveItem(Item):
+    """Item to save the thread's json."""
+
+    thread_path: Path
+    json_object: Any
+
+    async def process(
+        self, enqueue: Callable[[Item], Coroutine[Any, Any, None]]
+    ) -> None:
+        """Save the thread's json to 'thread.json' in the thread directory."""
+        json_path = self.thread_path / "thread.json"
+
+        async with aiofiles.open(json_path, "w") as f:
+            await f.write(json.dumps(self.json_object, indent=2))
+
+        log.info(f"Saved thread json to {self.thread_path}")
 
 
 async def start_queue(
@@ -291,13 +313,13 @@ async def start_queue(
 
     pbar = tqdm(unit="B", unit_scale=True, unit_divisor=1024, leave=False)
     pbar_var.set(pbar)
+    results = Results()
+    result_var.set(results)
 
     queue: Queue = Queue.create(
         queue_maxsize=queue_maxsize,
         stop_reason_callback=lambda sr: log.info(str(sr)),
     )
-    results = Results()
-    result_var.set(results)
 
     async with httpx.AsyncClient() as client:
         client_var.set(client)
