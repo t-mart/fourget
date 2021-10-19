@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "fourget"
-version = "0.7.0"
+version = "0.8.0"
 description = "Download/scrape media files from 4chan threads"
 authors = ["Tim Martin <tim@timmart.in>"]
 homepage = "https://github.com/t-mart/fourget"
@@ -13,7 +13,7 @@ python = "^3.10"
 httpx = "1.0.0b0"
 typer = "^0.4.0"
 attrs = "^21.2.0"
-aiofiles = "^0.7.0"
+aiofiles = "^0.8.0"
 tqdm = "^4.62.3"
 arrow = "^1.2.0"
 yarl = "^1.7.0"
