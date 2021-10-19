@@ -1,7 +1,7 @@
 """fourget."""
-from importlib.metadata import version, PackageNotFoundError
+from importlib.metadata import PackageNotFoundError, version
 
-__title__ = 'fourget'
+__title__ = "fourget"
 
 try:
     __version__ = version(__title__)

@@ -27,6 +27,9 @@ flake8 = "^4.0.1"
 pydocstyle = "^6.1.1"
 pylint = "^2.11.1"
 bump2version = "^1.0.1"
+pip-tools = "^6.4.0"
+pytest-cov = "^3.0.0"
+codecov = "^2.1.12"
 
 [build-system]
 requires = ["poetry-core>=1.0.0"]
