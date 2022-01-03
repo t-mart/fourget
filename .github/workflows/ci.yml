@@ -48,9 +48,6 @@ jobs:
         run: |
           poetry install
 
-      - name: Check docstrings
-        run: |
-          poetry run pydocstyle fourget tests
       - name: Check imports
         run: |
           poetry run isort --check fourget tests

@@ -25,7 +25,6 @@ mypy = "^0.910"
 pytest = "^6.2.5"
 isort = "^5.9.3"
 flake8 = "^4.0.1"
-pydocstyle = "^6.1.1"
 pylint = "^2.11.1"
 bump2version = "^1.0.1"
 pip-tools = "^6.4.0"
@@ -38,6 +37,3 @@ build-backend = "poetry.core.masonry.api"
 
 [tool.poetry.scripts]
 fourget = "fourget.__main__:app"
-
-[pydocstyle]
-ignore = "D444"

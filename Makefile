@@ -1,7 +1,7 @@
 src-dirs = fourget tests
 
 .PHONY: all
-all: pydocstyle isort black flake8 pylint mypy test
+all: isort black flake8 pylint mypy test
 
 .PHONY: mypy
 mypy:
@@ -22,10 +22,6 @@ pylint:
 .PHONY: black
 black:
 	black $(src-dirs)
-
-.PHONY: pydocstyle
-pydocstyle:
-	pydocstyle $(src-dirs)
 
 .PHONY: test
 test:
