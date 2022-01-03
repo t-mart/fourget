@@ -10,6 +10,7 @@ from collections.abc import AsyncIterator, Callable, Coroutine
 from contextvars import ContextVar
 from pathlib import Path
 from typing import Any, Optional
+from rich.progress import TaskID
 
 import aiofiles
 import attr
@@ -18,7 +19,7 @@ import typer
 from yarl import URL
 
 from fourget import __version__, log
-from fourget.console import PROGRESS, PROGRESS_TASK
+from fourget.console import PROGRESS
 from fourget.queue import Item, Queue
 
 client_var: ContextVar[httpx.AsyncClient] = ContextVar("client")
@@ -203,6 +204,7 @@ class MediaDownloadItem(Item):
 
     post_file: Post.File
     thread_dir: Path
+    progress_task: TaskID
 
     async def process(
         self, enqueue: Callable[[Item], Coroutine[Any, Any, None]]
@@ -220,13 +222,13 @@ class MediaDownloadItem(Item):
                 f"{self.post_file.url} already exists at "
                 f"{output_path.absolute().as_uri()}"
             )
-            PROGRESS.advance(PROGRESS_TASK, self.post_file.size)
+            PROGRESS.advance(self.progress_task, self.post_file.size)
         else:
             client = client_var.get()
             async for chunk_size in download_file(
                 client=client, url=self.post_file.url, path=output_path
             ):
-                PROGRESS.advance(PROGRESS_TASK, chunk_size)
+                PROGRESS.advance(self.progress_task, chunk_size)
             log.info(f"{self.post_file.url} -> {output_path.absolute().as_uri()}")
             result_var.get().performed_new_download = True
 
@@ -237,6 +239,7 @@ class ThreadReadItem(Item):
 
     thread_url: ThreadURL
     root_output_dir: Path
+    progress_task: TaskID
 
     async def process(
         self, enqueue: Callable[[Item], Coroutine[Any, Any, None]]
@@ -253,7 +256,7 @@ class ThreadReadItem(Item):
         ]
 
         total_file_size = sum(post.file.size for post in posts if post.file)
-        PROGRESS.update(PROGRESS_TASK, total=total_file_size)
+        PROGRESS.update(self.progress_task, total=total_file_size)
 
         orig_post = posts[0]
         assert orig_post
@@ -278,7 +281,13 @@ class ThreadReadItem(Item):
         for post in posts:
             if post.file is None:
                 continue
-            await enqueue(MediaDownloadItem(post_file=post.file, thread_dir=thread_dir))
+            await enqueue(
+                MediaDownloadItem(
+                    post_file=post.file,
+                    thread_dir=thread_dir,
+                    progress_task=self.progress_task,
+                )
+            )
 
 
 @attr.s(frozen=True, auto_attribs=True, kw_only=True, order=False)
@@ -307,6 +316,9 @@ async def start_queue(
     worker_count: int,
 ) -> bool:
     """Create a DownloadItem queue and start producers and consumers for it."""
+    PROGRESS.start()
+    progress_task = PROGRESS.add_task(description="Downloading")
+
     log.info(f"Downloading files from {thread_url.api_endpoint_url}")
 
     results = Results()
@@ -325,12 +337,13 @@ async def start_queue(
                 ThreadReadItem(
                     thread_url=thread_url,
                     root_output_dir=root_output_dir,
+                    progress_task=progress_task,
                 ),
             ],
             worker_count=worker_count,
         )
 
-    PROGRESS.stop_task(PROGRESS_TASK)
+    PROGRESS.stop_task(progress_task)
     PROGRESS.stop()
 
     return results.performed_new_download

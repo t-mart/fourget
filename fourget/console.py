@@ -20,5 +20,5 @@ PROGRESS = Progress(
     TimeRemainingColumn(),
     console=Console(stderr=True),
 )
-PROGRESS.start()
-PROGRESS_TASK = PROGRESS.add_task(description="Downloading")
+# PROGRESS.start()
+# PROGRESS_TASK = PROGRESS.add_task(description="Downloading")
