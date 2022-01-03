@@ -195,32 +195,12 @@ async def download_file(
 BLOCKED_FILE_NAME_CHARS = {chr(i) for i in range(32)} | set(R'<>:"/\|?*')
 
 
-def file_name_sanitize(stem: str, suffix: Optional[str] = None) -> str:
+def file_name_sanitize(name: str) -> str:
     """
-    Return a path component that should be suitable on most OSes. If a suffix is
-    provided, it will be added to the component.
-
-    Specifically:
-    - certain known bad characters will be filtered out of the stem.
-    - the total length of the component will be less than the NTFS maximum. The stem
-      argument will be shortened one character at a time until the length of
-      (stem + suffix) is less than this amount.
+    Return a file name that should be suitable on most OSes. Specifically, certain known
+    bad characters will be filtered out.
     """
-    if suffix is None:
-        suffix = ""
-    sanitized_stem = "".join(c for c in stem if c not in BLOCKED_FILE_NAME_CHARS)
-
-    # NTFS has filename component maximum. since these filenames are coming from
-    # external source, we may need to shorten. (And sorry to filesystems that have
-    # longer/no limits). Also, these are bytes, not characters, according to my testing
-    component_byte_max = 255
-
-    # check this to ensure that we can shorten at all. very unlikely it fails.
-    assert len(suffix.encode("utf-8")) <= component_byte_max
-
-    while len((sanitized_stem + suffix).encode("utf-8")) > component_byte_max:
-        sanitized_stem = sanitized_stem[:-1]
-    return sanitized_stem + suffix
+    return "".join(c for c in name if c not in BLOCKED_FILE_NAME_CHARS)
 
 
 @attr.s(frozen=True, auto_attribs=True, kw_only=True, order=False)
@@ -236,9 +216,11 @@ class MediaDownloadItem(Item):
         self, enqueue: Callable[[Item], Coroutine[Any, Any, None]]
     ) -> None:
         """Download media files to local disk from URLs."""
-        local_file_name = file_name_sanitize(
-            stem=f"{self.post_file.timestamp} - {self.post_file.poster_stem}",
-            suffix=f"{self.post_file.extension}",
+        local_file_name = (
+            file_name_sanitize(
+                f"{self.post_file.timestamp} - {self.post_file.poster_stem}"
+            )
+            + self.post_file.extension
         )
 
         output_path = self.thread_dir / local_file_name

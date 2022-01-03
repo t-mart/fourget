@@ -20,6 +20,13 @@ $ fourget https://boards.4channel.org/g/thread/76759434
 $ fourget --help
 ```
 
+### `FileNotFoundError` on Windows
+
+fourget will sometimes crash with a `FileNotFoundError` exception on Windows. This is due to
+limitations on the maximum length a file path. However, this limitation can be removed by following
+the steps at
+<https://docs.microsoft.com/en-us/windows/win32/fileio/maximum-file-path-limitation?tabs=cmd#enable-long-paths-in-windows-10-version-1607-and-later>.
+
 ## Installation
 
 ```shell
