@@ -404,6 +404,8 @@ def main(
     such as "https://boards.4channel.org/g/thread/76759434". The "4chan.org" domain may
     also be used.
     """
+    # do initialization of the progress bar out here, because we need to reference it
+    # to clean it up when we're finished or an exception is raised
     PROGRESS.start()
     progress_task = PROGRESS.add_task(description="Downloading")
     try:
