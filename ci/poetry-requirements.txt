@@ -55,7 +55,7 @@ pexpect==4.8.0
 pkginfo==1.7.0
     # via poetry
 poetry==1.1.11
-    # via -r ci/poetry-requirements.in
+    # via -r poetry-requirements.in
 poetry-core==1.0.7
     # via poetry
 ptyprocess==0.7.0
@@ -83,7 +83,7 @@ six==1.15.0
     #   virtualenv
 tomlkit==0.7.0
     # via poetry
-urllib3==1.26.3
+urllib3==1.26.5
     # via requests
 virtualenv==20.4.2
     # via poetry
