@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "fourget"
-version = "0.10.4"
+version = "0.10.5"
 description = "Download/scrape media files from 4chan threads"
 authors = ["Tim Martin <tim@timmart.in>"]
 homepage = "https://github.com/t-mart/fourget"
