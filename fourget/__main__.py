@@ -20,6 +20,11 @@ from yarl import URL
 from fourget import __version__, log
 from fourget.console import PROGRESS
 from fourget.queue import Item, Queue, StopReason
+from fourget.exception import (
+    FourgetException,
+    MalformedThreadURLException,
+    ThreadNotFoundException,
+)
 
 
 @attr.s(frozen=True, auto_attribs=True, kw_only=True, order=False)
@@ -148,8 +153,13 @@ class Thread:
         """Create a new ThreadURL from a desktop URL."""
         parsed = URL(url)
         path = Path(parsed.path)
-        _, board, _, thread_id = path.parts
-        return Thread(board=board, thread_id=int(thread_id))
+        try:
+            # value error may occur on unpack if not enough parts
+            _, board, _, thread_id = path.parts
+            # value error may occur if thread_id is not numeric
+            return Thread(board=board, thread_id=int(thread_id))
+        except ValueError as value_error:
+            raise MalformedThreadURLException(url) from value_error
 
     @property
     def api_endpoint_url(self) -> str:
@@ -157,6 +167,7 @@ class Thread:
         return f"https://a.4cdn.org/{self.board}/thread/{self.thread_id}.json"
 
     def to_url(self) -> str:
+        """Reconstruct the URL for this thread."""
         return f"https://boards.4channel.org/{self.board}/thread/{self.thread_id}"
 
 
@@ -239,6 +250,9 @@ class ThreadReadItem(Item):
         """Read the thread json and enqueue media downloads for posts with files."""
         response = await self.client.get(self.thread.api_endpoint_url)
 
+        if response.status_code == 404:
+            raise ThreadNotFoundException(self.thread.to_url())
+
         json_body = response.json()
 
         posts = [
@@ -306,11 +320,9 @@ async def start_queue(
     root_output_dir: Path,
     queue_maxsize: int,
     worker_count: int,
+    progress_task: TaskID,
 ) -> None:
     """Create a DownloadItem queue and start producers and consumers for it."""
-    PROGRESS.start()
-    progress_task = PROGRESS.add_task(description="Downloading")
-
     log.info(f"Downloading files from {thread.api_endpoint_url}")
 
     queue: Queue = Queue.create(
@@ -335,7 +347,6 @@ async def start_queue(
         )
 
     PROGRESS.stop_task(progress_task)
-    PROGRESS.stop()
 
 
 app = typer.Typer()
@@ -393,17 +404,27 @@ def main(
     such as "https://boards.4channel.org/g/thread/76759434". The "4chan.org" domain may
     also be used.
     """
-    asyncio.run(
-        start_queue(
-            thread=Thread.from_url(url),
-            root_output_dir=output_dir,
-            queue_maxsize=queue_maxsize,
-            worker_count=worker_count,
-        ),
-        debug=asyncio_debug,
-    )
-
-    raise typer.Exit(0)
+    PROGRESS.start()
+    progress_task = PROGRESS.add_task(description="Downloading")
+    try:
+        asyncio.run(
+            start_queue(
+                thread=Thread.from_url(url),
+                root_output_dir=output_dir,
+                queue_maxsize=queue_maxsize,
+                worker_count=worker_count,
+                progress_task=progress_task,
+            ),
+            debug=asyncio_debug,
+        )
+    except FourgetException as fourget_exception:
+        log.error(fourget_exception.msg)
+        PROGRESS.update(progress_task, visible=False)
+        raise typer.Exit(1)
+    else:
+        raise typer.Exit(0)
+    finally:
+        PROGRESS.stop()
 
 
 if __name__ == "__main__":
