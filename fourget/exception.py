@@ -3,6 +3,7 @@
 
 class FourgetException(Exception):
     """Base exception."""
+
     def __init__(self, msg: str) -> None:
         super().__init__(msg)
         self.msg = msg
@@ -10,6 +11,7 @@ class FourgetException(Exception):
 
 class MalformedThreadURLException(FourgetException):
     """Indicates thread URL doesn't look right."""
+
     def __init__(self, url: str) -> None:
         super().__init__(
             f"{url} does not look like a valid 4chan thread URL. Valid URLs take the "
@@ -20,5 +22,6 @@ class MalformedThreadURLException(FourgetException):
 
 class ThreadNotFoundException(FourgetException):
     """Indicates thread 404s from API."""
+
     def __init__(self, url: str) -> None:
         super().__init__(f"{url} cannot be found.")

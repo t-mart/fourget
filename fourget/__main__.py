@@ -9,22 +9,22 @@ from base64 import b64decode
 from collections.abc import AsyncIterator, Callable, Coroutine
 from pathlib import Path
 from typing import Any, Optional
-from rich.progress import TaskID
 
 import aiofiles
 import attr
 import httpx
 import typer
+from rich.progress import TaskID
 from yarl import URL
 
 from fourget import __version__, log
 from fourget.console import PROGRESS
-from fourget.queue import Item, Queue, StopReason
 from fourget.exception import (
     FourgetException,
     MalformedThreadURLException,
     ThreadNotFoundException,
 )
+from fourget.queue import Item, Queue, StopReason
 
 
 @attr.s(frozen=True, auto_attribs=True, kw_only=True, order=False)
