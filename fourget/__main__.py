@@ -7,7 +7,6 @@ import hashlib
 import json
 from base64 import b64decode
 from collections.abc import AsyncIterator, Callable, Coroutine
-from contextvars import ContextVar
 from pathlib import Path
 from typing import Any, Optional
 from rich.progress import TaskID
@@ -20,17 +19,7 @@ from yarl import URL
 
 from fourget import __version__, log
 from fourget.console import PROGRESS
-from fourget.queue import Item, Queue
-
-client_var: ContextVar[httpx.AsyncClient] = ContextVar("client")
-result_var: ContextVar[Results] = ContextVar("results")
-
-
-@attr.s(auto_attribs=True, kw_only=True, order=False)
-class Results:
-    """Summary of processing."""
-
-    performed_new_download: bool = attr.ib(default=False)
+from fourget.queue import Item, Queue, StopReason
 
 
 @attr.s(frozen=True, auto_attribs=True, kw_only=True, order=False)
@@ -148,24 +137,27 @@ class Post:
 
 
 @attr.s(frozen=True, auto_attribs=True, kw_only=True, order=False)
-class ThreadURL:
-    """Data class for thread URLs."""
+class Thread:
+    """Data class for threads."""
 
     board: str
     thread_id: int
 
     @classmethod
-    def from_url(cls, url: str) -> ThreadURL:
+    def from_url(cls, url: str) -> Thread:
         """Create a new ThreadURL from a desktop URL."""
         parsed = URL(url)
         path = Path(parsed.path)
         _, board, _, thread_id = path.parts
-        return ThreadURL(board=board, thread_id=int(thread_id))
+        return Thread(board=board, thread_id=int(thread_id))
 
     @property
     def api_endpoint_url(self) -> str:
         """Get the API endpoint URL."""
         return f"https://a.4cdn.org/{self.board}/thread/{self.thread_id}.json"
+
+    def to_url(self) -> str:
+        return f"https://boards.4channel.org/{self.board}/thread/{self.thread_id}"
 
 
 async def md5_path(path: Path, max_chunk_size: int = 2 ** 20) -> bytes:
@@ -205,6 +197,7 @@ class MediaDownloadItem(Item):
     post_file: Post.File
     thread_dir: Path
     progress_task: TaskID
+    client: httpx.AsyncClient
 
     async def process(
         self, enqueue: Callable[[Item], Coroutine[Any, Any, None]]
@@ -224,34 +217,32 @@ class MediaDownloadItem(Item):
             )
             PROGRESS.advance(self.progress_task, self.post_file.size)
         else:
-            client = client_var.get()
             async for chunk_size in download_file(
-                client=client, url=self.post_file.url, path=output_path
+                client=self.client, url=self.post_file.url, path=output_path
             ):
                 PROGRESS.advance(self.progress_task, chunk_size)
             log.info(f"{self.post_file.url} -> {output_path.absolute().as_uri()}")
-            result_var.get().performed_new_download = True
 
 
 @attr.s(frozen=True, auto_attribs=True, kw_only=True, order=False)
 class ThreadReadItem(Item):
     """Item that reads the thread."""
 
-    thread_url: ThreadURL
+    thread: Thread
     root_output_dir: Path
     progress_task: TaskID
+    client: httpx.AsyncClient
 
     async def process(
         self, enqueue: Callable[[Item], Coroutine[Any, Any, None]]
     ) -> None:
         """Read the thread json and enqueue media downloads for posts with files."""
-        client = client_var.get()
-        response = await client.get(self.thread_url.api_endpoint_url)
+        response = await self.client.get(self.thread.api_endpoint_url)
 
         json_body = response.json()
 
         posts = [
-            Post.from_json(board=self.thread_url.board, json_resp=post)
+            Post.from_json(board=self.thread.board, json_resp=post)
             for post in json_body["posts"]
         ]
 
@@ -267,7 +258,7 @@ class ThreadReadItem(Item):
             trailer = f" - {orig_post.description}"
 
         output_dir_name = file_name_santize(
-            f"4chan - {self.thread_url.board} - {orig_post.post_id}{trailer}"
+            f"4chan - {self.thread.board} - {orig_post.post_id}{trailer}"
         )
 
         thread_dir = self.root_output_dir / output_dir_name
@@ -286,6 +277,7 @@ class ThreadReadItem(Item):
                     post_file=post.file,
                     thread_dir=thread_dir,
                     progress_task=self.progress_task,
+                    client=self.client,
                 )
             )
 
@@ -310,34 +302,33 @@ class JSONSaveItem(Item):
 
 
 async def start_queue(
-    thread_url: ThreadURL,
+    thread: Thread,
     root_output_dir: Path,
     queue_maxsize: int,
     worker_count: int,
-) -> bool:
+) -> None:
     """Create a DownloadItem queue and start producers and consumers for it."""
     PROGRESS.start()
     progress_task = PROGRESS.add_task(description="Downloading")
 
-    log.info(f"Downloading files from {thread_url.api_endpoint_url}")
-
-    results = Results()
-    result_var.set(results)
+    log.info(f"Downloading files from {thread.api_endpoint_url}")
 
     queue: Queue = Queue.create(
         queue_maxsize=queue_maxsize,
         stop_reason_callback=lambda sr: log.info(str(sr)),
+        joined_stop_reason=StopReason(
+            reason=f"All media files of {thread.to_url()} have been gotten"
+        ),
     )
 
     async with httpx.AsyncClient() as client:
-        client_var.set(client)
-
         await queue.complete(
             initial_items=[
                 ThreadReadItem(
-                    thread_url=thread_url,
+                    thread=thread,
                     root_output_dir=root_output_dir,
                     progress_task=progress_task,
+                    client=client,
                 ),
             ],
             worker_count=worker_count,
@@ -345,8 +336,6 @@ async def start_queue(
 
     PROGRESS.stop_task(progress_task)
     PROGRESS.stop()
-
-    return results.performed_new_download
 
 
 app = typer.Typer()
@@ -404,9 +393,9 @@ def main(
     such as "https://boards.4channel.org/g/thread/76759434". The "4chan.org" domain may
     also be used.
     """
-    new_download = asyncio.run(
+    asyncio.run(
         start_queue(
-            thread_url=ThreadURL.from_url(url),
+            thread=Thread.from_url(url),
             root_output_dir=output_dir,
             queue_maxsize=queue_maxsize,
             worker_count=worker_count,
@@ -414,7 +403,7 @@ def main(
         debug=asyncio_debug,
     )
 
-    raise typer.Exit(0 if new_download else 1)
+    raise typer.Exit(0)
 
 
 if __name__ == "__main__":

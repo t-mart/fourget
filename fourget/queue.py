@@ -45,17 +45,20 @@ class Queue:
 
     _queue: asyncio.Queue[Item]
     stop_reason_callback: Callable[[StopReason], None]
+    joined_stop_reason: Optional[StopReason] = attr.ib(default=None)
 
     @classmethod
     def create(
         cls,
         queue_maxsize: int = 0,
         stop_reason_callback: Callable[[StopReason], Any] = lambda sr: ...,
+        joined_stop_reason: Optional[StopReason] = None,
     ) -> Queue:
         """Create a Queue object with a specified maximum size."""
         return cls(
             queue=asyncio.Queue[Item](maxsize=queue_maxsize),
             stop_reason_callback=stop_reason_callback,
+            joined_stop_reason=joined_stop_reason,
         )
 
     async def complete(self, initial_items: Iterable[Item], worker_count: int) -> None:
@@ -93,6 +96,8 @@ class Queue:
     async def _all_items_processed(self) -> StopReason:
         await self._queue.join()
 
+        if self.joined_stop_reason is not None:
+            return self.joined_stop_reason
         return StopReason(reason="All items processed")
 
     async def _worker(self) -> StopReason:
