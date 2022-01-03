@@ -6,7 +6,7 @@
 #
 appdirs==1.4.4
     # via virtualenv
-cachecontrol[filecache]==0.12.6
+cachecontrol[filecache]==0.12.10
     # via poetry
 cachy==0.3.0
     # via poetry
@@ -54,7 +54,7 @@ pexpect==4.8.0
     # via poetry
 pkginfo==1.7.0
     # via poetry
-poetry==1.1.11
+poetry==1.1.12
     # via -r ci/poetry-requirements.in
 poetry-core==1.0.7
     # via poetry
@@ -83,8 +83,10 @@ six==1.15.0
     #   virtualenv
 tomlkit==0.7.0
     # via poetry
-urllib3==1.26.3
-    # via requests
+urllib3==1.26.7
+    # via
+    #   -r ci/poetry-requirements.in
+    #   requests
 virtualenv==20.4.2
     # via poetry
 webencodings==0.5.1

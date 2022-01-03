@@ -1,4 +1,9 @@
 # This file generates poetry-requirements.txt
 # That file is used to bootstrap the GitHub actions environment with a reproducible set of packages.
 
-poetry ~= 1.1.11
+poetry ~= 1.1.12
+
+# poetry transitively depends on vulnerable urllib3
+# https://cve.mitre.org/cgi-bin/cvename.cgi?name=CVE-2021-33503
+# explicitly listing dep here until poetry can update too.
+urllib3 ~= 1.26.7
