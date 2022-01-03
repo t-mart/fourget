@@ -10,7 +10,6 @@ from collections.abc import AsyncIterator, Callable, Coroutine
 from pathlib import Path
 from typing import Any, Optional
 
-import aiofiles
 import attr
 import httpx
 import typer
@@ -173,9 +172,9 @@ class Thread:
 
 async def md5_path(path: Path, max_chunk_size: int = 2 ** 20) -> bytes:
     """Return the md5 hash of a file from its path."""
-    async with aiofiles.open(path, "rb") as f:
+    with path.open("rb") as f:
         md5_hash = hashlib.md5()
-        while data := await f.read(max_chunk_size):
+        while data := f.read(max_chunk_size):
             md5_hash.update(data)
         return md5_hash.digest()
 
@@ -185,9 +184,9 @@ async def download_file(
 ) -> AsyncIterator[int]:
     """Download url to path with client, yielding chunk lengths as we go."""
     async with client.stream("GET", url) as response:
-        async with aiofiles.open(path, "wb") as f:
+        with path.open("wb") as f:
             async for chunk in response.aiter_bytes(max_chunk_size):
-                await f.write(chunk)
+                f.write(chunk)
                 yield len(chunk)
 
 
@@ -332,8 +331,8 @@ class JSONSaveItem(Item):
         """Save the thread's json to 'thread.json' in the thread directory."""
         json_path = self.thread_path / "thread.json"
 
-        async with aiofiles.open(json_path, "w") as f:
-            await f.write(json.dumps(self.json_object, indent=2))
+        with json_path.open("w") as f:
+            f.write(json.dumps(self.json_object, indent=2))
 
         log.info(f"Saved thread json to {json_path.absolute().as_uri()}")
 
