@@ -15,14 +15,13 @@ import aiofiles
 import attr
 import httpx
 import typer
-from tqdm import tqdm
 from yarl import URL
 
 from fourget import __version__, log
+from fourget.console import PROGRESS, PROGRESS_TASK
 from fourget.queue import Item, Queue
 
 client_var: ContextVar[httpx.AsyncClient] = ContextVar("client")
-pbar_var: ContextVar[tqdm] = ContextVar("pbar")
 result_var: ContextVar[Results] = ContextVar("results")
 
 
@@ -209,8 +208,6 @@ class MediaDownloadItem(Item):
         self, enqueue: Callable[[Item], Coroutine[Any, Any, None]]
     ) -> None:
         """Download media files to local disk from URLs."""
-        pbar = pbar_var.get()
-
         local_file_name = file_name_santize(
             f"{self.post_file.timestamp} - {self.post_file.poster_stem}"
             f"{self.post_file.extension}"
@@ -219,15 +216,18 @@ class MediaDownloadItem(Item):
         output_path = self.thread_dir / local_file_name
 
         if output_path.exists() and await md5_path(output_path) == self.post_file.md5:
-            log.info(f"Not downloading {self.post_file.url} because it already exists")
-            pbar.update(self.post_file.size)
+            log.info(
+                f"{self.post_file.url} already exists at "
+                f"{output_path.absolute().as_uri()}"
+            )
+            PROGRESS.advance(PROGRESS_TASK, self.post_file.size)
         else:
             client = client_var.get()
             async for chunk_size in download_file(
                 client=client, url=self.post_file.url, path=output_path
             ):
-                pbar.update(chunk_size)
-            log.info(f"{self.post_file.url} -> {output_path}")
+                PROGRESS.advance(PROGRESS_TASK, chunk_size)
+            log.info(f"{self.post_file.url} -> {output_path.absolute().as_uri()}")
             result_var.get().performed_new_download = True
 
 
@@ -244,7 +244,6 @@ class ThreadReadItem(Item):
         """Read the thread json and enqueue media downloads for posts with files."""
         client = client_var.get()
         response = await client.get(self.thread_url.api_endpoint_url)
-        pbar = pbar_var.get()
 
         json_body = response.json()
 
@@ -254,7 +253,7 @@ class ThreadReadItem(Item):
         ]
 
         total_file_size = sum(post.file.size for post in posts if post.file)
-        pbar.total = total_file_size
+        PROGRESS.update(PROGRESS_TASK, total=total_file_size)
 
         orig_post = posts[0]
         assert orig_post
@@ -274,7 +273,7 @@ class ThreadReadItem(Item):
 
         if not thread_dir.exists():
             thread_dir.mkdir(parents=True)
-            log.debug(f"Created thread directory {thread_dir}")
+            log.debug(f"Created thread directory {thread_dir.absolute().as_uri()}")
 
         for post in posts:
             if post.file is None:
@@ -298,7 +297,7 @@ class JSONSaveItem(Item):
         async with aiofiles.open(json_path, "w") as f:
             await f.write(json.dumps(self.json_object, indent=2))
 
-        log.info(f"Saved thread json to {self.thread_path}")
+        log.info(f"Saved thread json to {json_path.absolute().as_uri()}")
 
 
 async def start_queue(
@@ -310,8 +309,6 @@ async def start_queue(
     """Create a DownloadItem queue and start producers and consumers for it."""
     log.info(f"Downloading files from {thread_url.api_endpoint_url}")
 
-    pbar = tqdm(unit="B", unit_scale=True, unit_divisor=1024, leave=False)
-    pbar_var.set(pbar)
     results = Results()
     result_var.set(results)
 
@@ -333,7 +330,8 @@ async def start_queue(
             worker_count=worker_count,
         )
 
-    pbar.close()
+    PROGRESS.stop_task(PROGRESS_TASK)
+    PROGRESS.stop()
 
     return results.performed_new_download
 

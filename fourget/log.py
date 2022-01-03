@@ -1,21 +1,20 @@
 """Logging setup."""
 
-import sys
-
 import arrow
-from tqdm import tqdm
+
+from fourget.console import PROGRESS
 
 # all are 5 characters long for easier reading/alignment
-DEBUG_LABEL = "DEBUG"
-INFO_LABEL = "INFO "
-WARN_LABEL = "WARN "
-ERROR_LABEL = "ERROR"
+DEBUG_LABEL = "[bold steel_blue]DEBUG[/bold steel_blue]"
+INFO_LABEL = "[bold blue]INFO [/bold blue]"
+WARN_LABEL = "[bold yellow]WARN [/bold yellow]"
+ERROR_LABEL = "[bold red]ERROR[/bold red]"
 
 
 def _log(*, label: str, msg: str) -> None:
     timestr = arrow.now().isoformat()
-    out = f"{timestr} - {label} - {msg}"
-    tqdm.write(out, file=sys.stderr)
+    out = f"[bright_black]{timestr}[/bright_black] {label}  {msg}"
+    PROGRESS.console.print(out)
 
 
 def debug(msg: str) -> None:
