@@ -217,9 +217,9 @@ def file_name_sanitize(stem: str, suffix: Optional[str] = None) -> str:
     component_byte_max = 255
 
     # check this to ensure that we can shorten at all. very unlikely it fails.
-    assert len(suffix.encode('utf-8')) <= component_byte_max
+    assert len(suffix.encode("utf-8")) <= component_byte_max
 
-    while len((sanitized_stem + suffix).encode('utf-8')) > component_byte_max:
+    while len((sanitized_stem + suffix).encode("utf-8")) > component_byte_max:
         sanitized_stem = sanitized_stem[:-1]
     return sanitized_stem + suffix
 
