@@ -1,27 +1,27 @@
-src-dirs = fourget tests
+src-paths = fourget tests
 
 .PHONY: all
 all: isort black flake8 pylint mypy test
 
 .PHONY: mypy
 mypy:
-	mypy $(src-dirs)
+	mypy $(src-paths)
 
 .PHONY: isort
 isort:
-	isort $(src-dirs)
+	isort $(src-paths)
 
 .PHONY: flake8
 flake8:
-	flake8 $(src-dirs)
+	flake8 $(src-paths)
 
 .PHONY: pylint
 pylint:
-	pylint $(src-dirs)
+	pylint $(src-paths)
 
 .PHONY: black
 black:
-	black $(src-dirs)
+	black $(src-paths)
 
 .PHONY: test
 test:
